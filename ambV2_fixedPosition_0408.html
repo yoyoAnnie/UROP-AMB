@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+    <head>
+        <meta content="text/html;charset=utf-8" http-equiv="Content-Type">
+        <title>Lottery Experiment</title>
+        <script src="jspsych-6.3.1/jspsych.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-categorize-html.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-call-function.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-html-button-response.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-html-keyboard-response.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-instructions.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-preload.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-image-button-response.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-image-keyboard-response.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-survey-html-form.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-survey-text.js"></script>
+        <script src="jspsych-6.3.1/plugins/jspsych-survey-multi-select.js"></script>
+        <script src="jspsych-6.3.1/jspsych-psychophysics-master/jspsych-psychophysics.js"></script>
+        <script src="expLoadings.js"></script>
+        <script src="cleanup.js"></script>
+        <script src="instructionsComprehension.js"></script>
+        <script src="taskTrials.js"></script>
+        <script src="usefulFunctions.js"></script>
+        <link href="jspsych-6.3.1/css/jspsych.css" rel="stylesheet" type="text/css">
+    </head>
+    <body></body>
+
+    <script>
+    // ─── Helper: safely get value from row (handles both [0] and .fixed_rwd) ───
+    function getVal(row, index, key) {
+        if (!row) return 0;
+        // If it's an array, use index. If it's an object, use key.
+        let val = Array.isArray(row) ? row[index] : row[key];
+        return (val !== undefined && val !== null) ? val : 0;
+    }
+
+    // ─── Helper: map amb_level value → correct image path ────────────────────
+    function getImageForAmbLevel(amb_val) {
+        // Handle both shorthand (1,2,3) and full values (25, 50, 75)
+        if      (amb_val == 1 || amb_val == 25)  return images_lottos[1]; 
+        else if (amb_val == 3 || amb_val == 50)  return images_lottos[3]; 
+        else if (amb_val == 2 || amb_val == 75)  return images_lottos[5]; 
+        else if (amb_val == 15) return images_lottos[0]; 
+        else if (amb_val == 40) return images_lottos[2]; 
+        else if (amb_val == 60) return images_lottos[4]; 
+        else if (amb_val == 85) return images_lottos[6]; 
+        else return images_lottos[2]; // Fallback
+    }
+
+    let timeline = [];
+
+    // ─── Practice stimuli setup ───────────────────────────────────────────────
+    let prac_all_val = [];
+    let prac_all_amb = [];
+    let prac_all_lotto_loc = [];
+    let prac_all_fix = [];
+    let prac_all_fix_loc = [];
+
+    // Ensure we build arrays of equal length
+    for(let i=0; i<2; i++) {
+        shuffle(prac_vals); prac_all_val = prac_all_val.concat(prac_vals);
+        shuffle(prac_amb);  prac_all_amb = prac_all_amb.concat(prac_amb);
+        shuffle(prac_lotto_reward_locations); prac_all_lotto_loc = prac_all_lotto_loc.concat(prac_lotto_reward_locations);
+        shuffle(prac_fix);  prac_all_fix = prac_all_fix.concat(prac_fix);
+        shuffle(prac_fixed_reward_locations); prac_all_fix_loc = prac_all_fix_loc.concat(prac_fixed_reward_locations);
+    }
+
+    // Use the SHORTEST length to avoid undefined
+    let num_prac_trials = Math.min(prac_all_amb.length, prac_all_fix.length, prac_all_val.length);
+    let prac_itis = evenlySpaced(exp_params.minITILength, exp_params.maxITILength, num_prac_trials);
+    shuffle(prac_itis);
+
+    for (let j = 0; j < num_prac_trials; j++) {
+        let red_val, blue_val;
+        if (prac_all_lotto_loc[j] == 0) {
+            red_val  = exp_params.altLottoReward;
+            blue_val = prac_all_val[j];
+        } else {
+            red_val  = prac_all_val[j];
+            blue_val = exp_params.altLottoReward;
+        }
+        factorsPrac.push({
+            red:        "$" + (red_val || 0),
+            blue:       "$" + (blue_val || 0),
+            fixed:      "$" + (prac_all_fix[j] || 0),
+            lottoImage: getImageForAmbLevel(prac_all_amb[j]),
+            itiLength:  prac_itis[j],
+            fixed_rhs:  prac_all_fix_loc[j]
+        });
+    }
+
+    // ─── Main task stimuli setup ──────────────────────────────────────────────
+    if (dev_mode == "debug") {
+        block1 = [
+            [ 6, 48, 1 ],    [ 4, 5, 3 ],     [ 3, 9.5, 2 ],
+            [ 3.5, 22, 1 ],  [ 9.5, 18, 15 ], [ 4, 34, 85 ],
+            [ 9.5, 34, 1 ]
+        ];
+        allBlocks = [block1];
+    } else {
+        allBlocks = [block1, block2, block3, block4];
+        shuffle(allBlocks);
+    }
+
+    allFactors = [];
+
+    for (let i = 0; i < allBlocks.length; i++) {
+        let block_data = allBlocks[i];
+        let num_trials = block_data.length;
+
+        let fixed_locs = Array(Math.floor(num_trials/2)).fill(0).concat(Array(Math.ceil(num_trials/2)).fill(1));
+        shuffle(fixed_locs);
+
+        let lotto_locs = Array(Math.floor(num_trials/2)).fill(0).concat(Array(Math.ceil(num_trials/2)).fill(1));
+        shuffle(lotto_locs);
+
+        let block_itis = evenlySpaced(exp_params.minITILength, exp_params.maxITILength, num_trials);
+        shuffle(block_itis);
+
+        let block_vars = [];
+        for (let j = 0; j < num_trials; j++) {
+            let row = block_data[j];
+            if (!row) continue;
+
+            // USE THE SAFETY HELPER to prevent $undefined
+            let fixed_reward = getVal(row, 0, 'fixed_rwd');
+            let lotto_reward = getVal(row, 1, 'lotto_rwd');
+            let amb_val      = getVal(row, 2, 'amb');
+
+            let red_val, blue_val;
+            if (lotto_locs[j] == 0) {
+                red_val  = exp_params.altLottoReward;
+                blue_val = lotto_reward;
+            } else {
+                red_val  = lotto_reward;
+                blue_val = exp_params.altLottoReward;
+            }
+
+            block_vars.push({
+                red:        "$" + red_val,
+                blue:       "$" + blue_val,
+                fixed:      "$" + fixed_reward,
+                lottoImage: getImageForAmbLevel(amb_val),
+                itiLength:  block_itis[j],
+                fixed_rhs:  fixed_locs[j]
+            });
+        }
+        allFactors.push(block_vars);
+    }
+
+    // ─── Imperative preload ───────────────────────────────────────────────────
+    function preloadAllImages() {
+        const all = [...images_instr, ...images_lottos, ...images_trials];
+        return Promise.all(all.map(src => new Promise(resolve => {
+            const img = new Image();
+            img.onload  = () => resolve();
+            img.onerror = () => resolve();
+            img.src = src;
+        })));
+    }
+
+    // ─── Timeline assembly ────────────────────────────────────────────────────
+    timeline.push(instructionsAll);
+    timeline.push(cursor_off);
+
+    if (dev_mode !== "debug") {
+        timeline.push({ timeline: [quiz1, quiz2, quiz3, quiz4, quiz5, quiz6, quiz7] });
+        timeline.push(pracInstr);
+        timeline.push({
+            timeline: [stim_trial, feedback_trial, iti_trial],
+            timeline_variables: factorsPrac,
+            randomize_order: false
+        });
+    }
+
+    timeline.push(postPracScreen);
+
+    for (let i = 0; i < allFactors.length; i++) {
+        timeline.push(new_block_screen);
+        timeline.push({
+            timeline: [stim_trial, feedback_trial, iti_trial],
+            timeline_variables: allFactors[i],
+            randomize_order: false
+        });
+    }
+
+    timeline.push(task_end);
+    timeline.push(cursor_on);
+    timeline.push(demographics);
+    timeline.push(debrief);
+    timeline.push(bdm);
+
+    preloadAllImages().then(() => {
+        jsPsych.init({
+            timeline: timeline,
+            show_preload_progress_bar: false,
+            on_finish: function() {
+                jsPsych.data.displayData();
+                const exclude_keys = ['internal_node_id','success','timeout','trial_index','stimulus'];
+                jsPsych.data.get().ignore(exclude_keys).localSave('csv','mydata.csv');
+            }
+        });
+    });
+    </script>
+</html>
